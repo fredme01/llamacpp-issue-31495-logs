@@ -1,0 +1,47 @@
+Exact command lines for every run in this bundle.
+Shared: model = Swift-1.5-Qwen3.8-27B-GSQ-RCO-IQ3_XXS-mtp.gguf (dense qwen35, one MTP block)
+Prompt: the same 12,188-token RAG prompt on every run.
+
+-- baseline HIP (b843e7dc), MTP off ------------------------------------------------
+llama-server -m <model> --host 127.0.0.1 --port 8092 -c 49152 -np 1 -ngl 99 \
+  -ctk q8_0 -ctv q8_0 -fa on -t 8 -b 4096 -ub 512 --verbose
+  -> raw/hip-b843e7dc-no-mtp.err
+
+-- HIP (b843e7dc), MTP on ----------------------------------------------------------
+llama-server ... --spec-type draft-mtp
+  -> raw/hip-b843e7dc-mtp.err
+
+-- HIP (b843e7dc), MTP on, HIP graphs off ------------------------------------------
+set GGML_CUDA_DISABLE_GRAPHS=1
+llama-server ... --spec-type draft-mtp
+  -> raw/hip-b843e7dc-mtp-no-hip-graph.err
+
+-- HIP (b843e7dc), ubatch sweep, MTP off -------------------------------------------
+llama-server ... -b 4096 -ub 128    -> raw/hip-b843e7dc-ub128.err
+llama-server ... -b 4096 -ub 2048   -> raw/hip-b843e7dc-ub2048.err
+
+-- HIP b11960 rebuilt here from tag 8642541 (gfx1101 only), MTP off / on -----------
+llama-server ... (same flags, no --verbose)                   -> raw/hip-b11960-rebuilt-no-mtp.err
+llama-server ... --spec-type draft-mtp                        -> raw/hip-b11960-rebuilt-mtp.err
+
+-- Vulkan b11960 (official release), MTP off / on ----------------------------------
+llama-server ... (same flags)                                 -> raw/vulkan-b11960-no-mtp.err
+llama-server ... --spec-type draft-mtp                        -> raw/vulkan-b11960-mtp.err
+
+-- official HIP release package on this machine (fails to use the GPU) -------------
+llama-b11960-bin-win-rocm-10.0-x64\llama-server.exe ...        -> raw/hip-b11960-official-cpu-fallback.err
+
+-- the kernel-path variants (numbers in measurements.md) ---------------------------
+set GGML_CUDA_FORCE_MMQ=1        llama-server ... --spec-type draft-mtp   -> 124.5 tok/s prompt
+set GGML_HIP_ROCWMMA_FATTN=0     llama-server ... --spec-type draft-mtp   -> 126.2 tok/s prompt
+                                 llama-server ... --spec-type draft-mtp --spec-draft-n-max 1 -> 114.8
+                                 llama-server ... -c 16384 --spec-type draft-mtp -> 114.0
+
+Notes
+- Every request was a single POST /v1/chat/completions with the same prompt and
+  max_tokens 8..128; throughput comes from `timings` in the response and from the
+  server's own `slot print_timing` line.
+- `--verbose` was on for the three HIP b843e7dc diag runs only, which is why those
+  logs are ~1 MB and the others are a few KB.
+- The build was rebuilt with the same toolchain and CMake flags as the working build;
+  see measurements.md, "Build provenance".
